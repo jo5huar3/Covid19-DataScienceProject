@@ -1,0 +1,344 @@
+---
+title: "Covid-19 by the Numbers"
+author: "Josh Lewis"
+date: "04/27/2023"
+output: slidy_presentation
+---
+
+## Covid-19
+  
+  The Covid-19 pandemic was a devastating and unique event in our history. It created lasting transformations for society and still remains a controversial topic. Opinions range on masks, effectiveness of lock-down mandates, the lethality of the virus, and every facet of the pandemic.  
+  This presentation will examine the data set of number of deaths of individuals infected with Covid-19 at the time of their death. This data set was produced by the U.S Department of Health & Human Services and is available at this  [link](https://catalog.data.gov/dataset/conditions-contributing-to-deaths-involving-coronavirus-disease-2019-covid-19-by-age-group). The data for 2020 and 2021 is final while 2022 and 2023 are provisional.  
+  The presentation will contain another data set to supplement the Covid-19 data set with national and state wide population figures. The presentation will use the 2020 census from the United States Census Bureau for population figures, available at this [link](https://data.census.gov/table?q=populatoin+totals+by+state&tid=DECENNIALPL2020.P1).
+  
+#### Questions
+
+* Which condition contributed to more deaths
+* How age is related to deaths
+* Which year had the most deaths
+* Death-rate per month
+* Total deaths per State
+* Percentage of deaths per State
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries needed
+
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(usmap)
+library(stringr)
+library(knitr)
+library(forcats)
+```
+
+### The data
+```{r echo=FALSE}
+
+# CSV provided by the U.S. Department of Health & Human Services available at data.gov
+# Data set that contains the amount of people infected with COVID-19 at the time of their death and 
+# underlying conditions that contributed to their death.
+covid_d <- read.csv(
+  "../data_sets/Conditions_Contributing_to_COVID-19_Deaths__by_State_and_Age__Provisional_2020-2023.csv",
+  stringsAsFactors = FALSE
+)
+head(covid_d, 8)
+```
+***
+### National total of deaths per pre-existing medical condition
+
+```{r fig.width=7, fig.height=7, echo=FALSE}
+# Data set shows each conditions grand total.
+national <- covid_d %>% filter(
+  State == "United States" & Age.Group == "All Ages"
+  & Group == "By Total"
+)
+national$Condition.Group <- str_wrap(national$Condition.Group, width = 15)
+
+national %>% group_by(Condition.Group) %>% summarise(total.deaths = sum(COVID.19.Deaths)) %>%
+  ggplot(aes(Condition.Group, total.deaths)) +
+  geom_col(fill = "#008080") + scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  theme_classic() + labs(x = "Condition", y = "Total Deaths",
+                         title = "Total Deaths per Condition") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+#### Total Deaths by Condition and Age.
+
+```{r echo=FALSE}
+national_by_age <- covid_d %>% filter(State == "United States" & Group == "By Total" &
+                                        Age.Group != "All Ages" & Age.Group != "Not stated")
+national_by_age$Condition.Group <- str_wrap(national_by_age$Condition.Group, width = 15)
+national_by_age %>% ggplot(aes(Condition.Group, COVID.19.Deaths, fill = Age.Group)) +
+  geom_col() +  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  theme_classic() + labs(x = "Condition", y = "Total Deaths",
+                         title = "Total Deaths per Condition") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+***
+### National Total by Age.
+
+```{r echo=FALSE}
+national_by_age %>% group_by(Age.Group) %>% summarise(total.deaths = sum(COVID.19.Deaths)) %>% 
+  ggplot(aes(Age.Group, total.deaths)) +
+  geom_col(fill = "blue") + scale_y_continuous(labels = function(n){format(n, scientific = FALSE)})
+```
+
+***
+### Fill by Condition Group.
+
+```{r echo=FALSE}
+national_by_age %>% ggplot(aes(Age.Group, COVID.19.Deaths, fill = Condition.Group)) +
+  geom_col() + scale_y_continuous(labels = function(n){format(n, scientific = FALSE)})
+
+```
+
+***
+### Monthly Totals and timeline Covid-19 deaths.
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
+monthly_deaths <- covid_d %>% filter(State == "United States" & Age.Group == "All Ages" & Group == "By Month")
+monthly_deaths_totals <- monthly_deaths %>% group_by(Start.Date) %>% summarise(total.month = sum(COVID.19.Deaths))
+monthly_deaths_totals$Start.Date <- as.Date(monthly_deaths_totals$Start.Date, "%m/%d/%Y")
+monthly_deaths_totals <- monthly_deaths_totals %>% arrange(Start.Date)
+monthly_deaths_totals %>% ggplot(aes(Start.Date, total.month)) +
+  geom_area(fill = "#800000") + theme_classic() + scale_y_continuous(labels = function(n){format(n, scientific = FALSE)})
+
+monthly_age <- covid_d %>% filter(Group == "By Month" & State == "United States") %>% select(Start.Date, Condition, Age.Group, COVID.19.Deaths)
+monthly_age$Start.Date <- as.Date(monthly_age$Start.Date, "%m/%d/%Y")
+monthly_age %>% group_by(Start.Date, Age.Group) %>% summarise(Deaths = sum(COVID.19.Deaths)) %>%  filter(Age.Group != "All Ages") %>% 
+  ggplot(aes(Start.Date, Deaths, fill = Age.Group)) +
+  geom_area() + scale_y_continuous(labels = function(n){format(n, scientific = FALSE)})
+```
+
+***
+### Yearly Stats
+
+```{r echo=FALSE}
+nation_by_year <- covid_d %>% filter(Group == "By Year" & State == "United States" & Age.Group != "All Ages"
+                                     & Age.Group != "Not stated") %>% 
+  select(Year, Condition.Group, Condition, Age.Group, COVID.19.Deaths)
+nation_by_year$Condition.Group <- str_wrap(nation_by_year$Condition.Group, width = 15)
+nation_by_year %>% ggplot(aes(Year, COVID.19.Deaths, fill = Condition.Group)) +
+  geom_col()
+
+```
+
+***
+### Timeline of total deaths.
+
+```{r}
+create_total_to_date <- function(data_V) {
+  new_V <- vector("integer", length(data_V))
+  new_V[1] = data_V[1]
+  for(x in 2:length(data_V))
+    new_V[x] = new_V[x - 1] + data_V[x]
+  return(new_V)
+}
+```
+
+```{r echo=FALSE}
+running_total <- monthly_deaths_totals %>% mutate(
+  to.date = create_total_to_date(total.month))
+```
+
+```{r echo=FALSE}
+running_total %>% ggplot(aes(Start.Date, to.date)) +
+  geom_line() + theme_classic() + theme_classic() + scale_y_continuous(labels = function(n){format(n, scientific = FALSE)}) + labs(x = "", y = "", title = "Cummulative Death Toll") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+***
+```{r echo=FALSE}
+# Data set showing the total deaths per condition per state.
+# Total is for all age-groups and dates 01/01/2020-03/18/2023.
+states <- covid_d %>% filter(State != "United States" & Age.Group == "All Ages"
+                             & Group == "By Total")
+
+# Data set shows the total amount of deaths each state has
+# incurred within dates 01/01/2020-03/18/2023.
+state_total <- states %>% group_by(State) %>% 
+  summarise(Total.Deaths = sum(COVID.19.Deaths)) %>% filter(State != "District of Columbia" & State != "Puerto Rico")
+# Combine New York and New York City
+state_total$Total.Deaths[state_total$State == "New York"] <-
+  state_total$Total.Deaths[state_total$State == "New York"] +
+  state_total$Total.Deaths[state_total$State == "New York City"]
+state_total <- state_total %>% filter(State != "New York City")
+
+kable(state_total %>% rename("Total Deaths" = Total.Deaths))
+
+
+# Data set with the nations grand total of deaths.
+national_total_deaths <- national %>% summarise(Died.With.Virus = sum(COVID.19.Deaths))
+kable(national_total_deaths %>% rename("U.S. Total Deaths" = Died.With.Virus))
+```
+
+***
+### The states
+
+```{r fig.width= 8, fig.height= 8, echo=FALSE}
+state_total %>%  ggplot(aes(Total.Deaths, reorder(State, Total.Deaths))) +
+  geom_col(fill = "navy", width = .9) + scale_x_continuous(labels = function(n){format(n, scientific = FALSE)}) +
+  labs(x = "", y = "", title = "Total Deaths per State") + theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+***
+#### Top 9 States
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+monthly_top_function <- function(dateV, numberV) {
+  new_V <- vector("integer", length(dateV))
+  for (x in 1:length(dateV)) {
+    if(dateV[x] == "2020-01-01")
+      new_V[x] = numberV[x]
+    else
+      new_V[x] = new_V[x - 1] + numberV[x]
+  }
+  return(new_V)
+}
+
+combine_yorks_monthly <- function(data_int_V, state_V) {
+  new_V <- vector("integer", length(data_int_V))
+  for (x in 1:length(data_int_V)) {
+    if(state_V[x] == "New York")
+      new_V[x] = data_int_V[x] + data_int_V[x + 1]
+    else
+      new_V[x] = data_int_V[x]
+  }
+  return(new_V)
+}
+
+# Need to add New York and New York City together.
+top_10State_V <- vector("character", 10)
+top_10State_V <- state_total %>% arrange(desc(Total.Deaths)) %>% slice(1:9) %>% .$State
+top_10State_V[10] <- "New York City"
+top_10 <- covid_d %>% filter(State %in% top_10State_V) %>%
+  select(Start.Date, Group, State, Condition.Group, Condition, Age.Group, COVID.19.Deaths) %>% na.omit()
+monthly_top_10 <- top_10 %>% filter(Group == "By Month" & Age.Group == "All Ages")
+monthly_top_10 <- monthly_top_10 %>% group_by(Start.Date, State) %>% summarise(Total.Month = sum(COVID.19.Deaths))
+monthly_top_10$Total.Month <- combine_yorks_monthly(monthly_top_10$Total.Month, monthly_top_10$State)
+monthly_top_10$Start.Date <- as.Date(monthly_top_10$Start.Date, "%m/%d/%Y")
+monthly_top_10 <- monthly_top_10 %>% arrange(State, Start.Date) %>% filter(State != "New York City")
+t10V <- monthly_top_function(monthly_top_10$Start.Date, monthly_top_10$Total.Month)
+monthly_top_10 <- monthly_top_10 %>% cbind(to.date = t10V)
+```
+
+```{r fig.height=7, fig.width=7, echo=FALSE}
+monthly_top_10 %>% ggplot(aes(Start.Date, to.date, color = State)) +
+  geom_line() + scale_y_continuous(labels = function(n){format(n, scientific = FALSE)}) +
+  theme_classic()
+```
+
+***
+
+```{r echo=FALSE}
+# Function takes a column from a data set as a vector and vector of values that you wish to
+# find. Returns a vector of the same length of data set containing true of false values.
+# Which are the locations of the values being searched.
+vectors_logical_OR <- function(data_V, condition_V) {
+  t_f <- vector("logical", length(data_V))
+  for (x in 1:length(data_V)) {
+    for (v in 1:length(condition_V)) {
+      if(data_V[x] == condition_V[v]){
+        t_f[x] = TRUE
+        break
+      }
+      if(v == length(condition_V)) {
+        t_f[x] = FALSE
+        break
+      }
+    }
+  }
+  return(t_f)
+}
+
+# CSV provided by the United States Census Bureau available at data.census.gov
+# An official census is taken every ten years; this is the latest census from 2020.
+census_data <- read.csv(
+  "../data_sets/DECENNIALPL2020.P1-2023-04-13T175445.csv", stringsAsFactors = FALSE
+)
+
+# Data is in a wide format with each state being an attribute. state_census contains a row for each
+# state and it's total population.
+state_census <- census_data %>% filter(Label..Grouping. == "Total:") %>% pivot_longer(cols = !Label..Grouping., names_to = "States", values_to = "Total") %>% 
+  select(-Label..Grouping.)
+# Removes comma from numbers and converts column to a numeric value
+state_census <- state_census %>% mutate(census = as.numeric(gsub(',', '', Total))) %>% 
+  select(-Total)
+
+# The following names contain a '.' instead of a face and will cause issues for future joins.
+bad_names <- c("New.Hampshire", "New.Jersey", "New.Mexico", "New.York", "North.Carolina",
+               "North.Dakota", "Rhode.Island", "South.Carolina", "South.Dakota",
+               "West.Virginia")
+# The Vector of the names needed for future joins.
+correct_names <- c("New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina",
+               "North Dakota", "Rhode Island", "South Carolina", "South Dakota",
+               "West Virginia")
+
+# Fixes the spelling of the state column.
+state_vector <- state_census$States
+t_f_vector <- vectors_logical_OR(state_vector, bad_names)
+state_vector[t_f_vector] <- correct_names
+state_census$States <- state_vector
+
+# Data frame with ratio of population that died with covid in their system.
+state_percentage <- left_join(state_total, state_census, join_by("State" == "States"))
+state_percentage <- state_percentage %>% mutate(ratio = Total.Deaths / census)
+percentage <- sprintf(state_percentage$ratio * 100, fmt = "%#.3f")
+kable(cbind(state_percentage$State, percentage))
+```
+
+***
+### State Percentages 
+
+``` {r fig.width= 8, fig.height= 8, echo=FALSE}
+state_percentage$ratio <- as.numeric(state_percentage$ratio)
+
+state_percentage %>%  ggplot(aes(ratio, reorder(State, ratio))) +
+  geom_col(fill = "navy", width = .9) + scale_x_continuous(labels = function(n){format(n, scientific = FALSE)}) +
+  labs(x = "", y = "", title = "Percent of Deaths per State") + theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+***
+#### US Map
+```{r echo=FALSE}
+us_total <- state_percentage %>% mutate(region = tolower(State))
+us_total$ratio <- as.numeric(sprintf(us_total$ratio * 100, fmt = "%#.3f"))
+map_states <- map_data("state")
+map.df <- merge(map_states, us_total, by = "region", all.x=T)
+map.df <- map.df[order(map.df$order),]
+ggplot(map.df, aes(x=long, y=lat, group=group)) +
+  geom_polygon(aes(fill=Total.Deaths)) +
+  geom_path() +
+  scale_fill_continuous(name = "n", low = "lightblue", high = "darkblue", na.value = "grey90") +
+  coord_map()
+```
+
+***
+### US Map with Percentage
+
+```{r echo=FALSE}
+ggplot(map.df, aes(x=long, y=lat, group=group)) +
+  geom_polygon(aes(fill=ratio)) +
+  geom_path() +
+  scale_fill_continuous(name = "%", low = "lightblue", high = "darkblue", na.value = "grey90") +
+  coord_map()
+
+
+```
+
+
+
+
